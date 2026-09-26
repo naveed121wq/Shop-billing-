@@ -1,0 +1,6 @@
+{
+  "name": "Shop Hisab KitabKitab",
+  "descriptdescriptionion": "Complete offline-first retail shop management, inventory, POS, accounting and Udhaar ledger",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
