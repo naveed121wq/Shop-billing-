@@ -1,136 +1,651 @@
-plugins {
-    alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.google.devtools.ksp)
-    alias(libs.plugins.secrets)
-    alias(libs.plugins.google.services)
-}
+package com.example.util
 
-android {
-    namespace = "com.example"
-    compileSdk = 35
+import android.content.Context
+import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
+import android.net.Uri
+import androidx.core.content.FileProvider
+import com.example.data.entity.SaleEntity
+import com.example.data.entity.SaleItemEntity
+import com.example.data.entity.ShopSettingsEntity
+import java.io.File
+import java.io.FileOutputStream
 
-    defaultConfig {
-        applicationId = "com.example"
-        minSdk = 24
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+object PdfInvoiceHelper {
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        vectorDrawables {
-            useSupportLibrary = true
-        }
-    }
+    fun generateSaleInvoicePdf(
+        context: Context,
+        settings: ShopSettingsEntity,
+        sale: SaleEntity,
+        items: List<SaleItemEntity>
+    ): File? {
 
-    buildTypes {
-        release {
-            isMinifyEnabled = false
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+        val document = PdfDocument()
+
+        try {
+            val is80mm = settings.thermalPrinterWidth == 80
+
+            val pageWidth = if (is80mm) 576 else 384
+
+            val dynamicHeight = 350 + (items.size * 30) + 200
+
+            val pageInfo = PdfDocument.PageInfo.Builder(
+                pageWidth,
+                dynamicHeight,
+                1
+            ).create()
+
+            val page = document.startPage(pageInfo)
+
+            val canvas: Canvas = page.canvas
+
+            val paint = Paint().apply {
+                color = Color.BLACK
+                isAntiAlias = true
+            }
+
+            var y = 35f
+
+            // -----------------------------
+            // SHOP HEADER
+            // -----------------------------
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.BOLD
             )
 
-            signingConfig = signingConfigs.getByName("release")
+            paint.textSize = 20f
+            paint.textAlign = Paint.Align.CENTER
+
+            canvas.drawText(
+                settings.shopName,
+                pageWidth / 2f,
+                y,
+                paint
+            )
+
+            y += 20f
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.NORMAL
+            )
+
+            paint.textSize = 12f
+
+            if (settings.shopTagline.isNotBlank()) {
+                canvas.drawText(
+                    settings.shopTagline,
+                    pageWidth / 2f,
+                    y,
+                    paint
+                )
+
+                y += 18f
+            }
+
+            if (settings.address.isNotBlank()) {
+                canvas.drawText(
+                    settings.address,
+                    pageWidth / 2f,
+                    y,
+                    paint
+                )
+
+                y += 18f
+            }
+
+            if (settings.phone.isNotBlank()) {
+                canvas.drawText(
+                    "Tel: ${settings.phone}",
+                    pageWidth / 2f,
+                    y,
+                    paint
+                )
+
+                y += 18f
+            }
+
+            // -----------------------------
+            // DIVIDER
+            // -----------------------------
+
+            y += 5f
+
+            paint.strokeWidth = 1.5f
+
+            canvas.drawLine(
+                20f,
+                y,
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            y += 18f
+
+            // -----------------------------
+            // INVOICE INFORMATION
+            // -----------------------------
+
+            paint.textAlign = Paint.Align.LEFT
+            paint.textSize = 11f
+
+            canvas.drawText(
+                "Invoice #: ${sale.invoiceNumber}",
+                20f,
+                y,
+                paint
+            )
+
+            paint.textAlign = Paint.Align.RIGHT
+
+            canvas.drawText(
+                "Date: ${CurrencyFormatter.formatDateOnly(sale.createdAt)}",
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            y += 16f
+
+            paint.textAlign = Paint.Align.LEFT
+
+            canvas.drawText(
+                "Customer: ${sale.customerName}",
+                20f,
+                y,
+                paint
+            )
+
+            if (sale.customerPhone.isNotBlank()) {
+
+                paint.textAlign = Paint.Align.RIGHT
+
+                canvas.drawText(
+                    "Phone: ${sale.customerPhone}",
+                    pageWidth - 20f,
+                    y,
+                    paint
+                )
+            }
+
+            // -----------------------------
+            // TABLE HEADER
+            // -----------------------------
+
+            y += 18f
+
+            paint.strokeWidth = 1f
+
+            canvas.drawLine(
+                20f,
+                y,
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            y += 15f
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.BOLD
+            )
+
+            paint.textAlign = Paint.Align.LEFT
+
+            canvas.drawText(
+                "Item",
+                20f,
+                y,
+                paint
+            )
+
+            canvas.drawText(
+                "Qty",
+                pageWidth * 0.52f,
+                y,
+                paint
+            )
+
+            canvas.drawText(
+                "Rate",
+                pageWidth * 0.68f,
+                y,
+                paint
+            )
+
+            paint.textAlign = Paint.Align.RIGHT
+
+            canvas.drawText(
+                "Total",
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            y += 8f
+
+            canvas.drawLine(
+                20f,
+                y,
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            y += 18f
+
+            // -----------------------------
+            // ITEMS
+            // -----------------------------
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.NORMAL
+            )
+
+            paint.textSize = 11f
+
+            for (item in items) {
+
+                paint.textAlign = Paint.Align.LEFT
+
+                val itemName =
+                    if (item.productName.length > 20) {
+                        item.productName.take(19) + "…"
+                    } else {
+                        item.productName
+                    }
+
+                canvas.drawText(
+                    itemName,
+                    20f,
+                    y,
+                    paint
+                )
+
+                canvas.drawText(
+                    "${item.quantity.toInt()} ${item.unit}",
+                    pageWidth * 0.52f,
+                    y,
+                    paint
+                )
+
+                canvas.drawText(
+                    "${item.unitPrice.toInt()}",
+                    pageWidth * 0.68f,
+                    y,
+                    paint
+                )
+
+                paint.textAlign = Paint.Align.RIGHT
+
+                canvas.drawText(
+                    "${item.lineTotal.toInt()}",
+                    pageWidth - 20f,
+                    y,
+                    paint
+                )
+
+                y += 20f
+            }
+
+            // -----------------------------
+            // TOTAL DIVIDER
+            // -----------------------------
+
+            paint.strokeWidth = 1f
+
+            canvas.drawLine(
+                20f,
+                y,
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            y += 18f
+
+            // -----------------------------
+            // SUBTOTAL
+            // -----------------------------
+
+            paint.textAlign = Paint.Align.LEFT
+
+            canvas.drawText(
+                "Subtotal:",
+                pageWidth * 0.50f,
+                y,
+                paint
+            )
+
+            paint.textAlign = Paint.Align.RIGHT
+
+            canvas.drawText(
+                CurrencyFormatter.formatPkr(
+                    sale.subtotal,
+                    settings.currencySymbol
+                ),
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            // -----------------------------
+            // DISCOUNT
+            // -----------------------------
+
+            if (sale.discountAmount > 0) {
+
+                y += 18f
+
+                paint.textAlign = Paint.Align.LEFT
+
+                canvas.drawText(
+                    "Discount:",
+                    pageWidth * 0.50f,
+                    y,
+                    paint
+                )
+
+                paint.textAlign = Paint.Align.RIGHT
+
+                canvas.drawText(
+                    "-${
+                        CurrencyFormatter.formatPkr(
+                            sale.discountAmount,
+                            settings.currencySymbol
+                        )
+                    }",
+                    pageWidth - 20f,
+                    y,
+                    paint
+                )
+            }
+
+            // -----------------------------
+            // GRAND TOTAL
+            // -----------------------------
+
+            y += 20f
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.BOLD
+            )
+
+            paint.textSize = 13f
+
+            paint.textAlign = Paint.Align.LEFT
+
+            canvas.drawText(
+                "Grand Total:",
+                pageWidth * 0.50f,
+                y,
+                paint
+            )
+
+            paint.textAlign = Paint.Align.RIGHT
+
+            canvas.drawText(
+                CurrencyFormatter.formatPkr(
+                    sale.grandTotal,
+                    settings.currencySymbol
+                ),
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            // -----------------------------
+            // PAID
+            // -----------------------------
+
+            y += 18f
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.NORMAL
+            )
+
+            paint.textSize = 11f
+
+            paint.textAlign = Paint.Align.LEFT
+
+            canvas.drawText(
+                "Paid (${sale.paymentMethod}):",
+                pageWidth * 0.50f,
+                y,
+                paint
+            )
+
+            paint.textAlign = Paint.Align.RIGHT
+
+            canvas.drawText(
+                CurrencyFormatter.formatPkr(
+                    sale.paidAmount,
+                    settings.currencySymbol
+                ),
+                pageWidth - 20f,
+                y,
+                paint
+            )
+
+            // -----------------------------
+            // REMAINING / UDHAAR
+            // -----------------------------
+
+            if (sale.remainingAmount > 0) {
+
+                y += 18f
+
+                paint.typeface = Typeface.create(
+                    Typeface.DEFAULT,
+                    Typeface.BOLD
+                )
+
+                paint.textAlign = Paint.Align.LEFT
+
+                canvas.drawText(
+                    "Remaining (Udhaar):",
+                    pageWidth * 0.50f,
+                    y,
+                    paint
+                )
+
+                paint.textAlign = Paint.Align.RIGHT
+
+                canvas.drawText(
+                    CurrencyFormatter.formatPkr(
+                        sale.remainingAmount,
+                        settings.currencySymbol
+                    ),
+                    pageWidth - 20f,
+                    y,
+                    paint
+                )
+            }
+
+            // -----------------------------
+            // FOOTER
+            // -----------------------------
+
+            y += 35f
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.BOLD
+            )
+
+            paint.textAlign = Paint.Align.CENTER
+
+            paint.textSize = 12f
+
+            canvas.drawText(
+                "Thank you for your visit!",
+                pageWidth / 2f,
+                y,
+                paint
+            )
+
+            y += 16f
+
+            paint.textSize = 10f
+
+            paint.typeface = Typeface.create(
+                Typeface.DEFAULT,
+                Typeface.NORMAL
+            )
+
+            canvas.drawText(
+                "تشریف آوری کا شکریہ! برائے مہربانی رسید سنبھال کر رکھیں۔",
+                pageWidth / 2f,
+                y,
+                paint
+            )
+
+            document.finishPage(page)
+
+            // -----------------------------
+            // SAVE PDF
+            // -----------------------------
+
+            val cacheDir = File(
+                context.cacheDir,
+                "invoices"
+            )
+
+            if (!cacheDir.exists()) {
+                cacheDir.mkdirs()
+            }
+
+            val file = File(
+                cacheDir,
+                "${sale.invoiceNumber}.pdf"
+            )
+
+            FileOutputStream(file).use { outputStream ->
+                document.writeTo(outputStream)
+            }
+
+            document.close()
+
+            return file
+
+        } catch (e: Exception) {
+
+            e.printStackTrace()
+
+            try {
+                document.close()
+            } catch (_: Exception) {
+            }
+
+            return null
         }
+    }
 
-        debug {
-            signingConfig = signingConfigs.getByName("debugConfig")
+    // -----------------------------
+    // SHARE PDF
+    // -----------------------------
+
+    fun sharePdf(
+        context: Context,
+        pdfFile: File
+    ) {
+
+        try {
+
+            val uri: Uri =
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    pdfFile
+                )
+
+            val intent =
+                Intent(Intent.ACTION_SEND).apply {
+
+                    type = "application/pdf"
+
+                    putExtra(
+                        Intent.EXTRA_STREAM,
+                        uri
+                    )
+
+                    addFlags(
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+                }
+
+            context.startActivity(
+                Intent.createChooser(
+                    intent,
+                    "Share Invoice PDF"
+                )
+            )
+
+        } catch (e: Exception) {
+
+            e.printStackTrace()
         }
     }
 
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
-    }
+    // -----------------------------
+    // SHARE VIA WHATSAPP
+    // -----------------------------
 
-    kotlinOptions {
-        jvmTarget = "11"
-    }
+    fun shareViaWhatsApp(
+        context: Context,
+        phone: String,
+        message: String
+    ) {
 
-    buildFeatures {
-        compose = true
-        buildConfig = true
-    }
+        try {
 
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            val cleanPhone =
+                phone.replace(
+                    Regex("[^0-9]"),
+                    ""
+                )
+
+            val finalNumber =
+                if (cleanPhone.startsWith("0")) {
+                    "92" + cleanPhone.substring(1)
+                } else {
+                    cleanPhone
+                }
+
+            val intent =
+                Intent(Intent.ACTION_VIEW).apply {
+
+                    data = Uri.parse(
+                        "https://api.whatsapp.com/send" +
+                                "?phone=$finalNumber" +
+                                "&text=${Uri.encode(message)}"
+                    )
+
+                    addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                    )
+                }
+
+            context.startActivity(intent)
+
+        } catch (e: Exception) {
+
+            e.printStackTrace()
         }
     }
-
-    signingConfigs {
-        create("release") {
-            val keystorePath =
-                System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-
-            storeFile = file(keystorePath)
-            storePassword = System.getenv("STORE_PASSWORD")
-            keyAlias = "upload"
-            keyPassword = System.getenv("KEY_PASSWORD")
-        }
-
-        create("debugConfig") {
-            storeFile = file("${rootDir}/debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
-        }
-    }
-}
-
-dependencies {
-
-    // AndroidX Core
-    implementation("androidx.core:core-ktx:1.15.0")
-
-    // CameraX
-    implementation("androidx.camera:camera-core:1.4.2")
-    implementation("androidx.camera:camera-camera2:1.4.2")
-    implementation("androidx.camera:camera-lifecycle:1.4.2")
-    implementation("androidx.camera:camera-view:1.4.2")
-
-    // ZXing Barcode / QR
-    implementation("com.google.zxing:core:3.5.3")
-
-    // Compose
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.material3)
-
-    // Activity
-    implementation(libs.androidx.activity.compose)
-
-    // Lifecycle
-    implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
-
-    // Room
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
-    ksp(libs.androidx.room.compiler)
-
-    // DataStore
-    implementation(libs.androidx.datastore.preferences)
-
-    // Coroutines
-    implementation(libs.kotlinx.coroutines.android)
-
-    // Retrofit / Network
-    implementation(libs.retrofit)
-    implementation(libs.converter.gson)
-
-    // Testing
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-
-    // Debug
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }
